@@ -44,9 +44,12 @@ class Game:
     ):
         pygame.init()
         pygame.display.set_caption("Ama você")
+        self.window_size = (800, 600)
+        self.display_rect = pygame.Rect(0, 0, WIDTH, HEIGHT)
         self.fullscreen = True
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
         self.world_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        self._update_display_rect()
         self.clock = pygame.time.Clock()
 
         self.font = pygame.font.SysFont("consolas", 22)
@@ -56,6 +59,14 @@ class Game:
 
         self.settings_path = Path.home() / ".ama_voce_settings.json"
         self.settings_dirty = False
+        self.window_size_options = [
+            (800, 600),
+            (960, 540),
+            (1024, 768),
+            (1280, 720),
+            (1366, 768),
+            (1600, 900),
+        ]
 
         self.audio = AudioManager()
         self.quality_name = DEFAULT_QUALITY
@@ -186,6 +197,13 @@ class Game:
         self.high_contrast_player = bool(data.get("high_contrast_player", self.high_contrast_player))
         self.fullscreen = bool(data.get("fullscreen", self.fullscreen))
 
+        window_size = data.get("window_size")
+        if isinstance(window_size, list) and len(window_size) == 2:
+            w = int(window_size[0])
+            h = int(window_size[1])
+            if 640 <= w <= 3840 and 480 <= h <= 2160:
+                self.window_size = (w, h)
+
         self.brightness = max(0.7, min(1.8, self.brightness))
         self.master_volume = max(0.0, min(1.0, self.master_volume))
 
@@ -198,6 +216,7 @@ class Game:
             "master_volume": self.master_volume,
             "high_contrast_player": self.high_contrast_player,
             "fullscreen": self.fullscreen,
+            "window_size": [self.window_size[0], self.window_size[1]],
         }
 
         try:
@@ -224,6 +243,7 @@ class Game:
         self.brightness = 1.0
         self.master_volume = 0.8
         self.high_contrast_player = True
+        self.window_size = (800, 600)
         self.set_fullscreen(True)
         self.auto_quality_check_accumulator = 0.0
         self.auto_quality_cooldown = 0.0
@@ -231,11 +251,51 @@ class Game:
 
     def set_fullscreen(self, enabled, persist=True):
         self.fullscreen = bool(enabled)
-        flags = pygame.FULLSCREEN if self.fullscreen else 0
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-        self.world_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        if self.fullscreen:
+            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        else:
+            self.screen = pygame.display.set_mode(self.window_size)
+        self._update_display_rect()
         if persist:
             self.mark_settings_dirty()
+
+    def _update_display_rect(self):
+        screen_w, screen_h = self.screen.get_size()
+        scale = min(screen_w / WIDTH, screen_h / HEIGHT)
+        render_w = max(1, int(WIDTH * scale))
+        render_h = max(1, int(HEIGHT * scale))
+        render_x = (screen_w - render_w) // 2
+        render_y = (screen_h - render_h) // 2
+        self.display_rect = pygame.Rect(render_x, render_y, render_w, render_h)
+
+    def _to_logical_pos(self, pos):
+        if not self.display_rect.collidepoint(pos):
+            return None
+
+        rel_x = (pos[0] - self.display_rect.x) / max(1, self.display_rect.width)
+        rel_y = (pos[1] - self.display_rect.y) / max(1, self.display_rect.height)
+        x = int(rel_x * WIDTH)
+        y = int(rel_y * HEIGHT)
+        x = max(0, min(WIDTH - 1, x))
+        y = max(0, min(HEIGHT - 1, y))
+        return (x, y)
+
+    def _window_size_label(self):
+        return f"{self.window_size[0]}x{self.window_size[1]}"
+
+    def _adjust_window_size(self, direction):
+        options = self.window_size_options
+        if self.window_size in options:
+            idx = options.index(self.window_size)
+        else:
+            idx = 0
+
+        idx = (idx + direction) % len(options)
+        self.window_size = options[idx]
+        if not self.fullscreen:
+            self.screen = pygame.display.set_mode(self.window_size)
+            self._update_display_rect()
+        self.mark_settings_dirty()
 
     def _set_manual_quality(self, name):
         self.auto_quality_enabled = False
@@ -426,11 +486,14 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.MOUSEMOTION:
-                self.handle_mouse_motion(event.pos)
-                if self.active_slider is not None:
-                    self.set_slider_from_mouse(self.active_slider, event.pos[0])
+                logical_pos = self._to_logical_pos(event.pos)
+                self.handle_mouse_motion(logical_pos)
+                if self.active_slider is not None and logical_pos is not None:
+                    self.set_slider_from_mouse(self.active_slider, logical_pos[0])
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self.handle_mouse_click(event.pos)
+                logical_pos = self._to_logical_pos(event.pos)
+                if logical_pos is not None:
+                    self.handle_mouse_click(logical_pos)
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 self.active_slider = None
             elif event.type == pygame.KEYDOWN:
@@ -466,7 +529,7 @@ class Game:
                     self.handle_settings_input(event.key)
 
     def handle_settings_input(self, key):
-        max_idx = 8
+        max_idx = 9
         if key in (pygame.K_UP, pygame.K_w):
             self.settings_index = (self.settings_index - 1) % (max_idx + 1)
             return
@@ -492,10 +555,15 @@ class Game:
             if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
                 self.set_fullscreen(not self.fullscreen)
         elif self.settings_index == 3:
+            if key in (pygame.K_LEFT, pygame.K_a):
+                self._adjust_window_size(-1)
+            if key in (pygame.K_RIGHT, pygame.K_d):
+                self._adjust_window_size(1)
+        elif self.settings_index == 4:
             if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
                 self.high_contrast_player = not self.high_contrast_player
                 self.mark_settings_dirty()
-        elif self.settings_index == 4:
+        elif self.settings_index == 5:
             if key in (pygame.K_LEFT, pygame.K_a):
                 order = ["alto", "medio", "baixo"]
                 idx = max(0, order.index(self.quality_name) - 1)
@@ -504,11 +572,11 @@ class Game:
                 order = ["alto", "medio", "baixo"]
                 idx = min(2, order.index(self.quality_name) + 1)
                 self._set_manual_quality(order[idx])
-        elif self.settings_index == 5:
+        elif self.settings_index == 6:
             if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
                 self.auto_quality_enabled = not self.auto_quality_enabled
                 self.mark_settings_dirty()
-        elif self.settings_index == 6:
+        elif self.settings_index == 7:
             profiles = ["agressivo", "balanceado", "conservador"]
             current = profiles.index(self.auto_quality_profile)
             if key in (pygame.K_LEFT, pygame.K_a):
@@ -521,12 +589,16 @@ class Game:
                 self.auto_quality_cfg.update(AUTO_QUALITY_PROFILES[self.auto_quality_profile])
                 self.auto_quality_check_accumulator = 0.0
                 self.mark_settings_dirty()
-        elif self.settings_index == 7 and key == pygame.K_RETURN:
-            self.restore_default_settings()
         elif self.settings_index == 8 and key == pygame.K_RETURN:
+            self.restore_default_settings()
+        elif self.settings_index == 9 and key == pygame.K_RETURN:
             self.close_settings()
 
     def handle_mouse_motion(self, pos):
+        if pos is None:
+            self.hover_menu_item = None
+            return
+
         if self.game_state == "menu":
             self.hover_menu_item = None
             for name, rect in self.menu_buttons.items():
@@ -590,16 +662,18 @@ class Game:
         elif index == 2:
             self.set_fullscreen(not self.fullscreen)
         elif index == 3:
+            self._adjust_window_size(1)
+        elif index == 4:
             self.high_contrast_player = not self.high_contrast_player
             self.mark_settings_dirty()
-        elif index == 4:
+        elif index == 5:
             order = ["alto", "medio", "baixo"]
             next_idx = (order.index(self.quality_name) + 1) % len(order)
             self._set_manual_quality(order[next_idx])
-        elif index == 5:
+        elif index == 6:
             self.auto_quality_enabled = not self.auto_quality_enabled
             self.mark_settings_dirty()
-        elif index == 6:
+        elif index == 7:
             profiles = ["agressivo", "balanceado", "conservador"]
             current = (profiles.index(self.auto_quality_profile) + 1) % len(profiles)
             self.auto_quality_profile = profiles[current]
@@ -607,9 +681,9 @@ class Game:
             self.auto_quality_cfg.update(AUTO_QUALITY_PROFILES[self.auto_quality_profile])
             self.auto_quality_check_accumulator = 0.0
             self.mark_settings_dirty()
-        elif index == 7:
-            self.restore_default_settings()
         elif index == 8:
+            self.restore_default_settings()
+        elif index == 9:
             self.close_settings()
 
     def update(self, dt):
@@ -925,7 +999,6 @@ class Game:
         self.apply_post_fx()
         self.apply_brightness()
 
-        self.screen.blit(self.world_surface, (0, 0))
         self.draw_hud(stage)
 
         if self.game_state == "menu":
@@ -941,15 +1014,15 @@ class Game:
             alpha = int(170 * self.ama_flash)
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             overlay.fill((50, 0, 0, min(100, alpha // 2)))
-            self.screen.blit(overlay, (0, 0))
+            self.world_surface.blit(overlay, (0, 0))
 
             for x, y, jitter in self.ama_glitch:
                 text = self.big_font.render("Ama você", True, (255, 80, 80))
-                self.screen.blit(text, (x + jitter * 0.08, y))
+                self.world_surface.blit(text, (x + jitter * 0.08, y))
 
                 ghost = self.big_font.render("Ama você", True, (255, 255, 255))
                 ghost.set_alpha(90)
-                self.screen.blit(ghost, (x - 3, y + 2))
+                self.world_surface.blit(ghost, (x - 3, y + 2))
 
         if self.game_state == "captured":
             self.draw_center_card(
@@ -960,6 +1033,13 @@ class Game:
 
         if self.game_state == "ending":
             self.draw_ending_screen()
+
+        self.screen.fill((0, 0, 0))
+        if self.display_rect.size == (WIDTH, HEIGHT):
+            self.screen.blit(self.world_surface, self.display_rect.topleft)
+        else:
+            scaled_world = pygame.transform.smoothscale(self.world_surface, self.display_rect.size)
+            self.screen.blit(scaled_world, self.display_rect.topleft)
 
         pygame.display.flip()
 
@@ -1027,16 +1107,16 @@ class Game:
     def draw_hud(self, stage):
         top = pygame.Surface((WIDTH, 70), pygame.SRCALPHA)
         top.fill((0, 0, 0, 120))
-        self.screen.blit(top, (0, 0))
+        self.world_surface.blit(top, (0, 0))
 
         title = self.font.render(f"Casa Liminal - {stage}", True, TEXT)
         frag = self.small_font.render(f"Fragmentos: {self.fragment_count}/4", True, GOOD)
         instruction = self.small_font.render("WASD mover | E interagir | ESC menu", True, TEXT)
         quality = self.small_font.render("F1 Alto | F2 Medio | F3 Baixo | F4 Auto", True, (170, 170, 180))
-        self.screen.blit(title, (24, 12))
-        self.screen.blit(frag, (24, 40))
-        self.screen.blit(instruction, (310, 42))
-        self.screen.blit(quality, (310, 20))
+        self.world_surface.blit(title, (24, 12))
+        self.world_surface.blit(frag, (24, 40))
+        self.world_surface.blit(instruction, (310, 42))
+        self.world_surface.blit(quality, (310, 20))
 
         quality_now = self.small_font.render(f"Preset: {self.quality_name.title()}", True, (205, 205, 215))
         auto_txt = "ON" if self.auto_quality_enabled else "OFF"
@@ -1045,44 +1125,44 @@ class Game:
             True,
             (205, 205, 215),
         )
-        self.screen.blit(quality_now, (24, 58))
-        self.screen.blit(perf, (310, 58))
+        self.world_surface.blit(quality_now, (24, 58))
+        self.world_surface.blit(perf, (310, 58))
 
         tension_w = 220
         bx, by = WIDTH - 260, 20
-        pygame.draw.rect(self.screen, (40, 40, 45), (bx, by, tension_w, 14), border_radius=6)
+        pygame.draw.rect(self.world_surface, (40, 40, 45), (bx, by, tension_w, 14), border_radius=6)
         pygame.draw.rect(
-            self.screen,
+            self.world_surface,
             (190, 70, 70),
             (bx, by, int(tension_w * self.tension), 14),
             border_radius=6,
         )
         txt_tension = self.small_font.render("Tensao", True, TEXT)
-        self.screen.blit(txt_tension, (bx, by - 18))
+        self.world_surface.blit(txt_tension, (bx, by - 18))
 
         hug_w = 220
         by2 = 48
-        pygame.draw.rect(self.screen, (40, 40, 45), (bx, by2, hug_w, 12), border_radius=6)
+        pygame.draw.rect(self.world_surface, (40, 40, 45), (bx, by2, hug_w, 12), border_radius=6)
         pygame.draw.rect(
-            self.screen,
+            self.world_surface,
             WARN,
             (bx, by2, int(hug_w * self.hug_meter), 12),
             border_radius=6,
         )
         txt_hug = self.small_font.render("Abraco da entidade", True, TEXT)
-        self.screen.blit(txt_hug, (bx, by2 - 18))
+        self.world_surface.blit(txt_hug, (bx, by2 - 18))
 
         stage_msg = self.get_stage_hint()
         msg = self.small_font.render(stage_msg, True, (200, 200, 210))
-        self.screen.blit(msg, (24, HEIGHT - 32))
+        self.world_surface.blit(msg, (24, HEIGHT - 32))
 
     def draw_main_menu(self):
         panel = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         panel.fill((6, 6, 10, 180))
-        self.screen.blit(panel, (0, 0))
+        self.world_surface.blit(panel, (0, 0))
 
         title = self.big_font.render("Ama voce", True, (240, 240, 245))
-        self.screen.blit(title, (WIDTH // 2 - title.get_width() // 2, 130))
+        self.world_surface.blit(title, (WIDTH // 2 - title.get_width() // 2, 130))
 
         lines = [
             ("iniciar", "ENTER / Clique - iniciar"),
@@ -1095,27 +1175,28 @@ class Game:
             base_rect = pygame.Rect(WIDTH // 2 - 170, 250 + i * 52, 340, 42)
             is_hover = self.hover_menu_item == name
             bg = (62, 26, 26, 190) if is_hover else (20, 20, 28, 170)
-            pygame.draw.rect(self.screen, bg, base_rect, border_radius=8)
-            pygame.draw.rect(self.screen, (95, 95, 110), base_rect, 1, border_radius=8)
+            pygame.draw.rect(self.world_surface, bg, base_rect, border_radius=8)
+            pygame.draw.rect(self.world_surface, (95, 95, 110), base_rect, 1, border_radius=8)
 
             txt = self.font.render(line, True, (236, 236, 242) if is_hover else (220, 220, 230))
-            self.screen.blit(txt, (base_rect.x + 14, base_rect.y + 8))
+            self.world_surface.blit(txt, (base_rect.x + 14, base_rect.y + 8))
             self.menu_buttons[name] = base_rect
 
     def draw_settings_menu(self):
-        panel = pygame.Surface((760, 420), pygame.SRCALPHA)
+        panel = pygame.Surface((760, 520), pygame.SRCALPHA)
         panel.fill((15, 18, 24, 240))
         x = WIDTH // 2 - panel.get_width() // 2
         y = HEIGHT // 2 - panel.get_height() // 2
-        self.screen.blit(panel, (x, y))
+        self.world_surface.blit(panel, (x, y))
 
         title = self.font.render("Configuracoes", True, (240, 240, 245))
-        self.screen.blit(title, (x + 30, y + 24))
+        self.world_surface.blit(title, (x + 30, y + 24))
 
         items = [
             f"Brilho: {self.brightness:.2f}",
             f"Volume: {int(self.master_volume * 100)}%",
             f"Tela cheia: {'ON' if self.fullscreen else 'OFF'}",
+            f"Resolucao janela: {self._window_size_label()}",
             f"Player alto contraste: {'ON' if self.high_contrast_player else 'OFF'}",
             f"Qualidade: {self.quality_name}",
             f"Auto quality: {'ON' if self.auto_quality_enabled else 'OFF'}",
@@ -1127,18 +1208,18 @@ class Game:
         self.slider_rects = {}
         self.settings_item_rects = []
         for i, item in enumerate(items):
-            row_rect = pygame.Rect(x + 30, y + 80 + i * 48, 700, 40)
+            row_rect = pygame.Rect(x + 30, y + 80 + i * 42, 700, 36)
             self.settings_item_rects.append(row_rect)
             color = (255, 120, 120) if i == self.settings_index else (215, 215, 225)
             row_bg = (60, 24, 24, 120) if i == self.settings_index else (20, 22, 30, 110)
-            pygame.draw.rect(self.screen, row_bg, row_rect, border_radius=6)
+            pygame.draw.rect(self.world_surface, row_bg, row_rect, border_radius=6)
             txt = self.font.render(item, True, color)
-            self.screen.blit(txt, (x + 38, y + 86 + i * 48))
+            self.world_surface.blit(txt, (x + 38, y + 84 + i * 42))
 
             if i in (0, 1):
                 slider_name = "brightness" if i == 0 else "volume"
-                slider_rect = pygame.Rect(x + 430, y + 92 + i * 48, 260, 14)
-                pygame.draw.rect(self.screen, (50, 54, 68), slider_rect, border_radius=7)
+                slider_rect = pygame.Rect(x + 430, y + 92 + i * 42, 260, 12)
+                pygame.draw.rect(self.world_surface, (50, 54, 68), slider_rect, border_radius=7)
 
                 if slider_name == "brightness":
                     ratio = (self.brightness - 0.7) / (1.8 - 0.7)
@@ -1147,13 +1228,13 @@ class Game:
                 ratio = max(0.0, min(1.0, ratio))
 
                 fill = pygame.Rect(slider_rect.x, slider_rect.y, int(slider_rect.width * ratio), slider_rect.height)
-                pygame.draw.rect(self.screen, (120, 180, 230), fill, border_radius=7)
+                pygame.draw.rect(self.world_surface, (120, 180, 230), fill, border_radius=7)
                 knob_x = slider_rect.x + int(slider_rect.width * ratio)
-                pygame.draw.circle(self.screen, (235, 238, 245), (knob_x, slider_rect.centery), 9)
+                pygame.draw.circle(self.world_surface, (235, 238, 245), (knob_x, slider_rect.centery), 8)
                 self.slider_rects[slider_name] = slider_rect.inflate(10, 10)
 
-        hint = self.small_font.render("Setas/Mouse para alterar | Arraste sliders | ESC voltar", True, (180, 180, 190))
-        self.screen.blit(hint, (x + 34, y + 382))
+            hint = self.small_font.render("Setas/Mouse para alterar | Arraste sliders | ESC voltar", True, (180, 180, 190))
+            self.world_surface.blit(hint, (x + 34, y + 478))
 
     def get_stage_hint(self):
         stage = STAGES[self.stage_index]
@@ -1178,7 +1259,7 @@ class Game:
     def draw_cutscene(self):
         panel = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         panel.fill((8, 8, 12, 210))
-        self.screen.blit(panel, (0, 0))
+        self.world_surface.blit(panel, (0, 0))
 
         # Ruido leve em cutscene para manter textura de fita analógica.
         cut_noise = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -1187,7 +1268,7 @@ class Game:
             y = random.randint(0, HEIGHT - 2)
             g = random.randint(120, 220)
             cut_noise.fill((g, g, g, 10), (x, y, 2, 2))
-        self.screen.blit(cut_noise, (0, 0))
+        self.world_surface.blit(cut_noise, (0, 0))
 
         total_chars = int(self.cutscene_reveal)
         y = 90
@@ -1197,27 +1278,27 @@ class Game:
             if total_chars < 0:
                 total_chars = 0
             txt = self.cut_font.render(shown, True, (228, 228, 236))
-            self.screen.blit(txt, (70, y))
+            self.world_surface.blit(txt, (70, y))
             y += 54
 
         if self.cutscene_min_hold <= 0:
             hint = self.small_font.render("ESPACO para continuar", True, (190, 190, 205))
-            self.screen.blit(hint, (WIDTH - 250, HEIGHT - 38))
+            self.world_surface.blit(hint, (WIDTH - 250, HEIGHT - 38))
 
     def draw_center_card(self, title, body, tint):
         panel = pygame.Surface((700, 230), pygame.SRCALPHA)
         panel.fill((tint[0], tint[1], tint[2], 210))
         x = WIDTH // 2 - panel.get_width() // 2
         y = HEIGHT // 2 - panel.get_height() // 2
-        self.screen.blit(panel, (x, y))
+        self.world_surface.blit(panel, (x, y))
 
         t = self.big_font.render(title, True, (245, 245, 245))
-        self.screen.blit(t, (x + 30, y + 22))
+        self.world_surface.blit(t, (x + 30, y + 22))
 
         lines = body.split("\n")
         for i, line in enumerate(lines):
             txt = self.font.render(line, True, (235, 235, 235))
-            self.screen.blit(txt, (x + 34, y + 120 + i * 30))
+            self.world_surface.blit(txt, (x + 34, y + 120 + i * 30))
 
     def draw_ending_screen(self):
         if self.victory_choice is None:

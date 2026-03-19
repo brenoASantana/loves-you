@@ -87,6 +87,7 @@ make run
 	- Brilho
 	- Volume mestre
 	- Tela cheia
+	- Resolucao da janela
 	- Alto contraste do player
 	- Preset de qualidade
 	- Auto Quality
@@ -97,4 +98,12 @@ make run
 
 - As configuracoes sao salvas automaticamente ao fechar a tela de ajustes ou sair do jogo.
 - Arquivo salvo em: ~/.ama_voce_settings.json
-- Inclui: brilho, volume mestre, contraste do player, qualidade, auto quality e perfil auto.
+- Inclui: brilho, volume mestre, contraste do player, qualidade, auto quality, perfil auto, tela cheia e tamanho da janela.
+
+## Resolucao de tela
+
+- Em tela cheia, o jogo usa a resolucao nativa atual do monitor.
+- Em modo janela, o padrao e 800x600.
+- No menu de configuracoes, voce pode trocar a resolucao da janela por presets.
+- Se quiser definir manualmente, ajuste no arquivo ~/.ama_voce_settings.json usando:
+	- "window_size": [largura, altura]
