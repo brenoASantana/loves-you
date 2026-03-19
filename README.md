@@ -66,10 +66,34 @@ make run
 - WASD: mover
 - E: interagir
 - ESPACO: avancar cutscene
+- ENTER: iniciar no menu principal
 - F1: preset Alto
 - F2: preset Medio
 - F3: preset Baixo
 - F4: alternar Auto Quality (liga/desliga)
+- S: abrir/fechar tela de configuracoes
 - Y/N: escolha final
 - R: reiniciar apos fim/captura
 - ESC: sair
+
+## Menu e configuracoes
+
+- O jogo inicia em um menu principal.
+- Pressione S para abrir a tela de configuracoes.
+- O menu principal aceita clique com mouse (iniciar, configuracoes e sair).
+- A tela de configuracoes aceita hover e clique nas opcoes.
+- Brilho e Volume agora possuem slider visual com arraste do mouse.
+- Na tela de configuracoes, voce pode ajustar:
+	- Brilho
+	- Volume mestre
+	- Alto contraste do player
+	- Preset de qualidade
+	- Auto Quality
+	- Perfil do Auto Quality
+	- Restaurar padrao (reseta tudo para os valores iniciais)
+
+## Persistencia de configuracoes
+
+- As configuracoes sao salvas automaticamente ao fechar a tela de ajustes ou sair do jogo.
+- Arquivo salvo em: ~/.ama_voce_settings.json
+- Inclui: brilho, volume mestre, contraste do player, qualidade, auto quality e perfil auto.

@@ -135,9 +135,10 @@ class AudioManager:
 
         self.heartbeat_channel.set_volume(heartbeat_volume * audio_mul)
 
-    def trigger_ama_whisper(self):
+    def trigger_ama_whisper(self, volume: float = 1.0):
         if not self.available or self.fx_channel is None or self.whisper_sound is None:
             return
+        self.fx_channel.set_volume(max(0.0, min(1.0, volume)))
         self.fx_channel.play(self.whisper_sound)
 
     def shutdown(self):

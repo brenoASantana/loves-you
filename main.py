@@ -16,19 +16,19 @@ def parse_args():
     parser.add_argument(
         "--quality",
         choices=["alto", "medio", "baixo"],
-        default="medio",
+        default=None,
         help="Preset inicial de qualidade.",
     )
     parser.add_argument(
         "--auto-quality",
         choices=["on", "off"],
-        default="off",
+        default=None,
         help="Liga ou desliga o auto quality no inicio.",
     )
     parser.add_argument(
         "--auto-profile",
         choices=["agressivo", "balanceado", "conservador"],
-        default="balanceado",
+        default=None,
         help="Perfil de ajuste automatico por FPS.",
     )
     return parser.parse_args()
@@ -38,6 +38,6 @@ if __name__ == "__main__":
     args = parse_args()
     Game(
         initial_quality=args.quality,
-        auto_quality_enabled=args.auto_quality == "on",
+        auto_quality_enabled=(None if args.auto_quality is None else args.auto_quality == "on"),
         auto_quality_profile=args.auto_profile,
     ).run()
