@@ -44,8 +44,9 @@ class Game:
     ):
         pygame.init()
         pygame.display.set_caption("Ama você")
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        self.world_surface = pygame.Surface((WIDTH, HEIGHT)).convert_alpha()
+        self.fullscreen = True
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+        self.world_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         self.clock = pygame.time.Clock()
 
         self.font = pygame.font.SysFont("consolas", 22)
@@ -183,6 +184,7 @@ class Game:
         self.brightness = float(data.get("brightness", self.brightness))
         self.master_volume = float(data.get("master_volume", self.master_volume))
         self.high_contrast_player = bool(data.get("high_contrast_player", self.high_contrast_player))
+        self.fullscreen = bool(data.get("fullscreen", self.fullscreen))
 
         self.brightness = max(0.7, min(1.8, self.brightness))
         self.master_volume = max(0.0, min(1.0, self.master_volume))
@@ -195,6 +197,7 @@ class Game:
             "brightness": self.brightness,
             "master_volume": self.master_volume,
             "high_contrast_player": self.high_contrast_player,
+            "fullscreen": self.fullscreen,
         }
 
         try:
@@ -221,9 +224,18 @@ class Game:
         self.brightness = 1.0
         self.master_volume = 0.8
         self.high_contrast_player = True
+        self.set_fullscreen(True)
         self.auto_quality_check_accumulator = 0.0
         self.auto_quality_cooldown = 0.0
         self.mark_settings_dirty()
+
+    def set_fullscreen(self, enabled, persist=True):
+        self.fullscreen = bool(enabled)
+        flags = pygame.FULLSCREEN if self.fullscreen else 0
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+        self.world_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        if persist:
+            self.mark_settings_dirty()
 
     def _set_manual_quality(self, name):
         self.auto_quality_enabled = False
@@ -395,6 +407,7 @@ class Game:
             self.room_lights.append(RoomLight(room, tint, base_alpha, flicker_speed, phase))
 
     def run(self):
+        self.set_fullscreen(self.fullscreen, persist=False)
         while self.running:
             dt = self.clock.tick(FPS) / 1000.0
             self._update_auto_quality(dt)
@@ -424,8 +437,11 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     if self.game_state == "settings":
                         self.close_settings()
-                    else:
+                    elif self.game_state == "menu":
                         self.running = False
+                    else:
+                        self.prev_state = self.game_state
+                        self.game_state = "menu"
                 if event.key == pygame.K_F1:
                     self._set_manual_quality("alto")
                 if event.key == pygame.K_F2:
@@ -435,12 +451,6 @@ class Game:
                 if event.key == pygame.K_F4:
                     self.auto_quality_enabled = not self.auto_quality_enabled
                     self.auto_quality_check_accumulator = 0.0
-                if event.key == pygame.K_s:
-                    if self.game_state != "settings":
-                        self.prev_state = self.game_state
-                        self.game_state = "settings"
-                    else:
-                        self.close_settings()
                 if event.key == pygame.K_r and self.game_state in {"captured", "ending"}:
                     self.reset()
                 if self.game_state == "menu" and event.key == pygame.K_RETURN:
@@ -456,7 +466,7 @@ class Game:
                     self.handle_settings_input(event.key)
 
     def handle_settings_input(self, key):
-        max_idx = 7
+        max_idx = 8
         if key in (pygame.K_UP, pygame.K_w):
             self.settings_index = (self.settings_index - 1) % (max_idx + 1)
             return
@@ -480,9 +490,12 @@ class Game:
                 self.mark_settings_dirty()
         elif self.settings_index == 2:
             if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
+                self.set_fullscreen(not self.fullscreen)
+        elif self.settings_index == 3:
+            if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
                 self.high_contrast_player = not self.high_contrast_player
                 self.mark_settings_dirty()
-        elif self.settings_index == 3:
+        elif self.settings_index == 4:
             if key in (pygame.K_LEFT, pygame.K_a):
                 order = ["alto", "medio", "baixo"]
                 idx = max(0, order.index(self.quality_name) - 1)
@@ -491,11 +504,11 @@ class Game:
                 order = ["alto", "medio", "baixo"]
                 idx = min(2, order.index(self.quality_name) + 1)
                 self._set_manual_quality(order[idx])
-        elif self.settings_index == 4:
+        elif self.settings_index == 5:
             if key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_a, pygame.K_d):
                 self.auto_quality_enabled = not self.auto_quality_enabled
                 self.mark_settings_dirty()
-        elif self.settings_index == 5:
+        elif self.settings_index == 6:
             profiles = ["agressivo", "balanceado", "conservador"]
             current = profiles.index(self.auto_quality_profile)
             if key in (pygame.K_LEFT, pygame.K_a):
@@ -508,9 +521,9 @@ class Game:
                 self.auto_quality_cfg.update(AUTO_QUALITY_PROFILES[self.auto_quality_profile])
                 self.auto_quality_check_accumulator = 0.0
                 self.mark_settings_dirty()
-        elif self.settings_index == 6 and key == pygame.K_RETURN:
-            self.restore_default_settings()
         elif self.settings_index == 7 and key == pygame.K_RETURN:
+            self.restore_default_settings()
+        elif self.settings_index == 8 and key == pygame.K_RETURN:
             self.close_settings()
 
     def handle_mouse_motion(self, pos):
@@ -575,16 +588,18 @@ class Game:
         elif index == 1:
             return
         elif index == 2:
+            self.set_fullscreen(not self.fullscreen)
+        elif index == 3:
             self.high_contrast_player = not self.high_contrast_player
             self.mark_settings_dirty()
-        elif index == 3:
+        elif index == 4:
             order = ["alto", "medio", "baixo"]
             next_idx = (order.index(self.quality_name) + 1) % len(order)
             self._set_manual_quality(order[next_idx])
-        elif index == 4:
+        elif index == 5:
             self.auto_quality_enabled = not self.auto_quality_enabled
             self.mark_settings_dirty()
-        elif index == 5:
+        elif index == 6:
             profiles = ["agressivo", "balanceado", "conservador"]
             current = (profiles.index(self.auto_quality_profile) + 1) % len(profiles)
             self.auto_quality_profile = profiles[current]
@@ -592,9 +607,9 @@ class Game:
             self.auto_quality_cfg.update(AUTO_QUALITY_PROFILES[self.auto_quality_profile])
             self.auto_quality_check_accumulator = 0.0
             self.mark_settings_dirty()
-        elif index == 6:
-            self.restore_default_settings()
         elif index == 7:
+            self.restore_default_settings()
+        elif index == 8:
             self.close_settings()
 
     def update(self, dt):
@@ -1016,7 +1031,7 @@ class Game:
 
         title = self.font.render(f"Casa Liminal - {stage}", True, TEXT)
         frag = self.small_font.render(f"Fragmentos: {self.fragment_count}/4", True, GOOD)
-        instruction = self.small_font.render("WASD mover | E interagir | S ajustes | ESC sair", True, TEXT)
+        instruction = self.small_font.render("WASD mover | E interagir | ESC menu", True, TEXT)
         quality = self.small_font.render("F1 Alto | F2 Medio | F3 Baixo | F4 Auto", True, (170, 170, 180))
         self.screen.blit(title, (24, 12))
         self.screen.blit(frag, (24, 40))
@@ -1071,7 +1086,7 @@ class Game:
 
         lines = [
             ("iniciar", "ENTER / Clique - iniciar"),
-            ("config", "S / Clique - configuracoes"),
+            ("config", "Clique - configuracoes"),
             ("sair", "ESC / Clique - sair"),
         ]
 
@@ -1100,6 +1115,7 @@ class Game:
         items = [
             f"Brilho: {self.brightness:.2f}",
             f"Volume: {int(self.master_volume * 100)}%",
+            f"Tela cheia: {'ON' if self.fullscreen else 'OFF'}",
             f"Player alto contraste: {'ON' if self.high_contrast_player else 'OFF'}",
             f"Qualidade: {self.quality_name}",
             f"Auto quality: {'ON' if self.auto_quality_enabled else 'OFF'}",
@@ -1136,7 +1152,7 @@ class Game:
                 pygame.draw.circle(self.screen, (235, 238, 245), (knob_x, slider_rect.centery), 9)
                 self.slider_rects[slider_name] = slider_rect.inflate(10, 10)
 
-        hint = self.small_font.render("Setas/Mouse para alterar | Arraste sliders | S/ESC voltar", True, (180, 180, 190))
+        hint = self.small_font.render("Setas/Mouse para alterar | Arraste sliders | ESC voltar", True, (180, 180, 190))
         self.screen.blit(hint, (x + 34, y + 382))
 
     def get_stage_hint(self):

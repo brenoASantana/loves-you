@@ -71,21 +71,22 @@ make run
 - F2: preset Medio
 - F3: preset Baixo
 - F4: alternar Auto Quality (liga/desliga)
-- S: abrir/fechar tela de configuracoes
+- ESC: abrir menu (durante o jogo) e sair (quando no menu)
 - Y/N: escolha final
 - R: reiniciar apos fim/captura
-- ESC: sair
 
 ## Menu e configuracoes
 
 - O jogo inicia em um menu principal.
-- Pressione S para abrir a tela de configuracoes.
+- Durante a partida, pressione ESC para voltar ao menu.
+- As configuracoes ficam no menu principal.
 - O menu principal aceita clique com mouse (iniciar, configuracoes e sair).
 - A tela de configuracoes aceita hover e clique nas opcoes.
 - Brilho e Volume agora possuem slider visual com arraste do mouse.
 - Na tela de configuracoes, voce pode ajustar:
 	- Brilho
 	- Volume mestre
+	- Tela cheia
 	- Alto contraste do player
 	- Preset de qualidade
 	- Auto Quality
